@@ -4,6 +4,7 @@ import (
 	//"flags" // use go-flags!!
 	//"fmt"
 	"bytes"
+	"os/exec"
 	"io"
 	"net/http"
 	//"os"
@@ -16,14 +17,18 @@ import (
 
 	// positional args, cmd-completion, etc!
 	// https://pkg.go.dev/github.com/jessevdk/go-flags
+	// "github.com/jessevdk/go-flags"
+
 
 	//log "github.com/sirupsen/logrus"
 
 )
 
 const (
-	BASE_URL = "http://adam-3003-1-24-2:5000"
+	BASE_URL = "http://localhost:5000"
 	SUB_URL = "/config/__active/services/liveIngest/channels/popup_%d/state"
+	CLI_ARG = "services.liveIngest.channels.popup_%d.state"
+	CONFCLI = false
 )
 
 type Cfg struct {
@@ -32,29 +37,45 @@ type Cfg struct {
 
 func main() {
 	urls := getUrls()
+	args := getCliArgs()
 	_ = urls
 	for {
 		dt := time.Now()
-		fmt.Println("Current date and time is: ", dt.Format("2006-01-02 15:04:05"))
-		setChannels(urls, "enabled")
+		fmt.Println("time: ", dt.Format("2006-01-02 15:04:05"))
+		setChannels(urls, args, "disabled")
 		// time.Sleep(15 * time.Second)
-		checkChannels(urls, "enabled")
+		time.Sleep(time.Second * 10)
+		//checkChannels(urls, "enabled")
 
-		setChannels(urls, "catchup")
+
+		fmt.Println("time: ", time.Now().Format("2006-01-02 15:04:05"))
+		setChannels(urls, args, "catchup")
 		// time.Sleep(15 * time.Second)
-		checkChannels(urls, "catchup")
+		time.Sleep(time.Millisecond * 1500)
+		os.Exit(0)
+		//checkChannels(urls, "catchup")
 
 	}
 }
 
 func getUrls() []string {
 	var urls []string
-	for i := 1; i <= 7; i++ {
+	for i := 7; i >= 1; i-- {
 		url := BASE_URL + fmt.Sprintf(SUB_URL, i)
 		urls = append(urls, url)
 	}
 
 	return urls
+}
+
+func getCliArgs() []string {
+	var args []string
+	for i := 1; i <= 7; i++ {
+		arg := fmt.Sprintf(CLI_ARG, i)
+		args = append(args, arg)
+	}
+
+	return args
 }
 
 func checkChannels(urls []string, expected string) {
@@ -70,15 +91,24 @@ func checkChannels(urls []string, expected string) {
 	fmt.Print("\n")
 }
 
-func setChannels(urls []string, state string) {
+func setChannels(urls, cliArgs []string, state string) {
 	var wg sync.WaitGroup
 
-	fmt.Print("setChannels() ", state)
-	for _, url := range urls  {
-		wg.Add(1)
-		go setChannel(url, state, &wg)
 
+	if CONFCLI {
+		fmt.Print("setChannels() [confcli]: ", state)
 
+		for _, arg := range cliArgs  {
+			wg.Add(1)
+			go setChannel(arg, state, &wg)
+		}
+	} else {
+		fmt.Print("setChannels() REST: ", state)
+
+		for _, url := range urls  {
+			wg.Add(1)
+			go setChannel(url, state, &wg)
+		}
 
 	}
 
@@ -125,26 +155,38 @@ func checkChannel(url, expected string, wg *sync.WaitGroup) {
 
 
 
-func setChannel(url, state string, wg *sync.WaitGroup) {
+func setChannel(urlArg, state string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	data := &Cfg {
-		State: state}
+	if CONFCLI {
+		cmd := exec.Command("confcli", urlArg, state)
+		stdout, err := cmd.Output()
+		_ = err
+		_ = stdout
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Print(".")
+		}
+	} else {
+		data := &Cfg {
+			State: state}
 
-	buff, err := json.Marshal(data)
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer([]byte(buff)))
-    if err != nil {
-        panic(err)
-    }
+		buff, err := json.Marshal(data)
+		req, err := http.NewRequest(http.MethodPut, urlArg, bytes.NewBuffer([]byte(buff)))
+		if err != nil {
+			panic(err)
+		}
 
-    // set the request header Content-Type for json
-    req.Header.Set("Content-Type", "application/json")
-    // initialize http client
-    client := &http.Client{}
-    _, err = client.Do(req)
-    if err != nil {
-        panic(err)
-    }
-	fmt.Print(".")
+		// set the request header Content-Type for json
+		req.Header.Set("Content-Type", "application/json")
+		// initialize http client
+		client := &http.Client{}
+		_, err = client.Do(req)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Print(".")
+	}
 
 }
