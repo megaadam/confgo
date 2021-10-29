@@ -2,8 +2,9 @@ package main
 
 import (
 	//"flags" // use go-flags!!
+	"bytes"
 	"fmt"
-	"errors"
+	//"errors"
 	"io"
 	"net/http"
 	"os"
@@ -47,11 +48,30 @@ func main() {
 	printConfig(firstServer, opts.Verbose)
 }
 
-func printConfig(server string, verbose bool) error {
-	confUrl := fmt.Sprintf("http://%s:5000/config/__active/", server)
+func getUrl(server string) string {
+	return fmt.Sprintf("http://%s:5000/config/__active/", server)
+}
 
-	fmt.Println("Config from: ", confUrl)
-	resp, err := http.Get(confUrl)
+func printConfig(server string, verbose bool) error {
+	conf := getConfig(server)
+
+	if(verbose == false) {
+		lines := strings.Split(conf, "\n")
+		fmt.Println(strings.Join(lines[:9], "\n"))
+
+		if(len(lines) >10) {
+			fmt.Printf("[...] Omitted %v lines\n", len(lines) - 10)
+		}
+	} else {
+	    fmt.Println(conf)
+	}
+	return nil
+}
+
+func getConfig(server string) string{
+	url := getUrl(server)
+	fmt.Println("Get config from:", url)
+	resp, err := http.Get(url)
 
 	if err != nil {
         log.Fatal(err)
@@ -65,22 +85,32 @@ func printConfig(server string, verbose bool) error {
 
         log.Fatal(err)
     }
+	return string(body)
+}
 
-	if(verbose == false) {
-		lines := strings.Split(string(body), "\n")
-		fmt.Println(strings.Join(lines[:9], "\n"))
+func putConfig(server string, cfg string) {
+	url := getUrl(server)
+	fmt.Println("Put config to:", url)
 
-		if(len(body) >10) {
-			fmt.Printf("[...] Omitted %v lines\n", len(lines) - 10)
-		}
-	} else {
-	    fmt.Println(string(body))
-	}
-	return nil
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer([]byte(cfg)))
+    if err != nil {
+        panic(err)
+    }
+
+    // set the request header Content-Type for json
+    req.Header.Set("Content-Type", "application/json")
+    // initialize http client
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        panic(err)
+    }
+	fmt.Println(resp)
 }
 
 func copyConfig(server1 string, server2 string) error {
 	fmt.Printf("Copy config from: %s to: %s ... \n", server1, server2)
-	fmt.Println("You wish!!")
-	return errors.New("Not implemented.")
+	cfg := getConfig(server1)
+	putConfig(server2, cfg)
+	return nil
 }
